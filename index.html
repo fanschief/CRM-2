@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>會員動態週期分眾系統 (Dynamic Segmentation)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700;900&family=JetBrains+Mono:wght@400;700&display=swap');
+        
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background-color: #0b1120;
+            color: #f8fafc;
+            background-image: 
+                radial-gradient(circle at 0% 0%, rgba(56, 189, 248, 0.05), transparent 40%),
+                radial-gradient(circle at 100% 100%, rgba(139, 92, 246, 0.05), transparent 40%);
+            background-attachment: fixed;
+        }
+
+        .tech-font { font-family: 'JetBrains Mono', monospace; }
+
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.6);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .drop-zone {
+            border: 2px dashed rgba(100, 116, 139, 0.5);
+            transition: all 0.2s ease;
+            background: rgba(15, 23, 42, 0.5);
+        }
+
+        .drop-zone.dragover, .drop-zone:hover {
+            border-color: #38bdf8;
+            background: rgba(56, 189, 248, 0.05);
+        }
+
+        .drop-zone.has-file {
+            border-style: solid;
+            border-color: #10b981;
+            background: rgba(16, 185, 129, 0.05);
+        }
+
+        .checkbox-wrapper input:checked + div {
+            background-color: #8b5cf6;
+            border-color: #8b5cf6;
+        }
+
+        /* 滾動條美化 */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+        
+        /* 表單元素美化 */
+        input[type="date"]::-webkit-calendar-picker-indicator {
+            filter: invert(1);
+            cursor: pointer;
+        }
+
+        .fade-in { animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body class="min-h-screen p-4 md:p-8 flex flex-col">
+
+    <header class="mb-8 text-center">
+        <h1 class="text-3xl md:text-5xl font-black tracking-wider mb-2 text-white flex items-center justify-center gap-3">
+            <svg class="w-10 h-10 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+            DYNAMIC_<span class="text-sky-400">SEGMENTS</span>
+        </h1>
+        <p class="text-slate-400 font-light tracking-wide">條件完全解鎖版：手動微調日期與規則，即時預覽產出公式</p>
+    </header>
+
+    <div class="max-w-7xl mx-auto w-full flex flex-col gap-6">
+
+        <!-- Step 1: 參數設定 -->
+        <div class="glass-panel rounded-2xl p-6 md:p-8 border-t-4 border-t-sky-500">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+                <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                    <span class="bg-sky-500 text-slate-900 w-7 h-7 rounded-full flex items-center justify-center text-sm font-black">1</span>
+                    快速配置面板 (Auto-Fill)
+                </h2>
+                <div class="text-xs text-sky-300 bg-sky-900/30 px-3 py-1 rounded border border-sky-500/30">
+                    此區僅為快速產生預設值，您隨後可在下方單獨修改每一層的條件
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+                <div class="bg-slate-800/50 p-4 rounded-xl border border-slate-700">
+                    <label class="block text-sm text-sky-400 mb-2 font-bold tech-font">計算基準日</label>
+                    <input type="date" id="baseDate" class="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-sky-500 tech-font">
+                </div>
+                
+                <div class="bg-slate-800/50 p-4 rounded-xl border border-slate-700">
+                    <label class="block text-sm text-sky-400 mb-2 font-bold tech-font">單一週期天數</label>
+                    <div class="relative">
+                        <input type="number" id="cycleDays" value="45" min="1" class="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-sky-500 tech-font">
+                        <span class="absolute right-3 top-2 text-slate-400">天</span>
+                    </div>
+                </div>
+
+                <div class="bg-slate-800/50 p-4 rounded-xl border border-slate-700">
+                    <label class="block text-sm text-sky-400 mb-2 font-bold tech-font">要配置到 R 幾？</label>
+                    <select id="maxR" class="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-sky-500 tech-font cursor-pointer">
+                        <option value="1">R1 (僅1層)</option>
+                        <option value="2">R2 (共2層)</option>
+                        <option value="3" selected>R3 (共3層)</option>
+                        <option value="4">R4 (共4層)</option>
+                        <option value="5">R5 (共5層)</option>
+                        <option value="6">R6 (共6層)</option>
+                    </select>
+                </div>
+
+                <div class="bg-violet-900/20 p-4 rounded-xl border border-violet-500/30 flex flex-col justify-center">
+                    <label class="block text-sm text-violet-400 mb-2 font-bold tech-font">最底層選項</label>
+                    <label class="flex items-center cursor-pointer checkbox-wrapper group">
+                        <input type="checkbox" id="includeAll" checked class="hidden">
+                        <div class="w-6 h-6 border-2 border-slate-500 rounded bg-slate-900 flex items-center justify-center transition-colors group-hover:border-violet-400">
+                            <svg class="w-4 h-4 text-white opacity-0 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg>
+                        </div>
+                        <span class="ml-3 text-sm text-slate-300 group-hover:text-white transition-colors">設為「全會員名單」</span>
+                    </label>
+                </div>
+            </div>
+            
+            <button onclick="generatePipeline()" class="mt-4 w-full bg-slate-800 hover:bg-slate-700 border border-slate-600 text-sky-400 font-bold py-2 rounded-lg transition-colors">
+                套用上方設定 (重置下方所有條件)
+            </button>
+        </div>
+
+        <!-- Step 2: 動態檔案上傳區 -->
+        <div class="glass-panel rounded-2xl p-6 md:p-8 border-t-4 border-t-indigo-500">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+                <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                    <span class="bg-indigo-500 text-white w-7 h-7 rounded-full flex items-center justify-center text-sm font-black">2</span>
+                    上傳檔案與微調條件
+                </h2>
+                <div class="text-xs text-indigo-300 bg-indigo-900/30 px-3 py-1 rounded border border-indigo-500/30">
+                    可自由修改下拉選單與日期。留空區間會自動略過。
+                </div>
+            </div>
+
+            <div id="uploadGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+                <!-- Javascript render content -->
+            </div>
+        </div>
+
+        <!-- 執行按鈕 -->
+        <button id="processBtn" onclick="executeProcessing()" class="w-full bg-gradient-to-r from-sky-600 to-violet-600 hover:from-sky-500 hover:to-violet-500 text-white font-black py-5 rounded-2xl text-xl shadow-[0_0_20px_rgba(56,189,248,0.2)] transition-all transform hover:-translate-y-1">
+            啟動瀑布流資料清洗 (RUN_SEGMENTATION)
+        </button>
+
+        <div id="loadingUI" class="hidden text-center py-8 glass-panel rounded-2xl">
+            <div class="flex flex-col items-center justify-center gap-4 text-sky-400 tech-font text-lg">
+                <svg class="animate-spin h-12 w-12" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                <span id="loadingMsg">正在執行瀑布流排除運算中，請稍候...</span>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- 結果面板 Modal -->
+    <div id="resultModal" class="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-50 hidden flex items-center justify-center p-4">
+        <div class="glass-panel w-full max-w-7xl max-h-[90vh] flex flex-col rounded-2xl border-sky-500/50 p-6 relative overflow-hidden">
+            <button onclick="closeModal()" class="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors z-10 bg-slate-800 rounded-full p-1">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+            
+            <div class="flex-shrink-0 mb-6">
+                <h2 class="text-3xl font-black text-white mb-2">💎 瀑布流產出完成！</h2>
+                <p class="text-slate-400 text-sm">系統已完美執行連續差集。以下是絕對不重疊的獨立客群：</p>
+            </div>
+            
+            <div id="resultGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 overflow-y-auto pb-4 pr-2 flex-grow content-start">
+                <!-- Javascript render results -->
+            </div>
+            
+            <div class="mt-4 pt-4 border-t border-slate-700 text-center flex-shrink-0">
+                <button onclick="closeModal()" class="text-slate-400 hover:text-white underline text-sm tech-font">CLOSE_TERMINAL</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let pipelineConfig = []; 
+        let finalBlobs = [];     
+
+        const els = {
+            baseDate: document.getElementById('baseDate'),
+            cycleDays: document.getElementById('cycleDays'),
+            maxR: document.getElementById('maxR'),
+            includeAll: document.getElementById('includeAll'),
+            uploadGrid: document.getElementById('uploadGrid'),
+            resultGrid: document.getElementById('resultGrid')
+        };
+
+        function init() {
+            const today = new Date();
+            els.baseDate.value = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+
+            els.includeAll.addEventListener('change', (e) => {
+                const svg = e.target.nextElementSibling.querySelector('svg');
+                svg.style.opacity = e.target.checked ? '1' : '0';
+            });
+            els.includeAll.nextElementSibling.querySelector('svg').style.opacity = els.includeAll.checked ? '1' : '0';
+
+            generatePipeline();
+        }
+
+        function formatDate(dateObj) {
+            return `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
+        }
+
+        // 安全解析日期 (避免時區導致減一天)
+        function parseLocalDate(dStr) {
+            if (!dStr) return new Date();
+            const parts = dStr.split('-');
+            if (parts.length === 3) {
+                return new Date(parts[0], parts[1] - 1, parts[2]);
+            }
+            return new Date(dStr);
+        }
+
+        function formatMD(dStr) {
+            if (!dStr) return '';
+            const d = parseLocalDate(dStr);
+            if (isNaN(d.getTime())) return dStr;
+            return `${d.getMonth() + 1}/${d.getDate()}`;
+        }
+
+        function minusOneDay(dStr) {
+            const d = parseLocalDate(dStr);
+            d.setDate(d.getDate() - 1);
+            return `${d.getMonth() + 1}/${d.getDate()}`;
+        }
+
+        function generatePipeline() {
+            const baseStr = els.baseDate.value;
+            const cycle = parseInt(els.cycleDays.value) || 45;
+            const maxR = parseInt(els.maxR.value) || 3;
+            const hasAll = els.includeAll.checked;
+
+            if(!baseStr) return;
+            const baseDateObj = parseLocalDate(baseStr);
+
+            pipelineConfig = []; 
+
+            for (let i = 1; i <= maxR; i++) {
+                const dateObj = new Date(baseDateObj);
+                dateObj.setDate(baseDateObj.getDate() - (cycle * i));
+
+                pipelineConfig.push({
+                    id: `R${i}`,
+                    title: `[ 層級 ${i} ]`,
+                    operator: '>=',
+                    dateVal: formatDate(dateObj),
+                    colorTheme: 'sky',
+                    file: null
+                });
+            }
+
+            if (hasAll) {
+                pipelineConfig.push({
+                    id: `R_ALL`,
+                    title: `[ 最終層：母體 ]`,
+                    operator: 'ALL', 
+                    dateVal: '', 
+                    colorTheme: 'violet',
+                    file: null
+                });
+            } else {
+                const dateObj = new Date(baseDateObj);
+                dateObj.setDate(baseDateObj.getDate() - (cycle * maxR) - 1);
+                pipelineConfig.push({
+                    id: `R_HIST`,
+                    title: `[ 最終層：歷史 ]`,
+                    operator: '<=', 
+                    dateVal: formatDate(dateObj),
+                    colorTheme: 'rose',
+                    file: null
+                });
+            }
+
+            renderUploadBoxes();
+        }
+
+        function updateNode(id, key, value) {
+            const idx = pipelineConfig.findIndex(c => c.id === id);
+            if(idx > -1) {
+                pipelineConfig[idx][key] = value;
+                renderUploadBoxes(); 
+            }
+        }
+
+        function renderUploadBoxes() {
+            els.uploadGrid.innerHTML = '';
+
+            const validNodes = pipelineConfig.filter(c => c.file);
+
+            pipelineConfig.forEach((cfg, index) => {
+                const colorMap = {
+                    sky: { bg: 'bg-slate-800/80', border: 'border-slate-700', text: 'text-sky-400', hbg: 'bg-slate-900' },
+                    violet: { bg: 'bg-violet-900/10', border: 'border-violet-500/30', text: 'text-violet-400', hbg: 'bg-violet-950/50' },
+                    rose: { bg: 'bg-slate-800/80', border: 'border-slate-700', text: 'text-rose-400', hbg: 'bg-slate-900' }
+                };
+                const theme = colorMap[cfg.colorTheme];
+                const dateInputDisplay = cfg.operator === 'ALL' ? 'hidden' : 'block';
+                
+                let logicText = '';
+                const myConditionStr = cfg.operator === 'ALL' ? '全會員名單' : `${cfg.operator} ${cfg.dateVal || '未設日期'}`;
+                
+                if (!cfg.file) {
+                    logicText = `<span class="text-slate-500">未上傳檔案 (將自動略過此層)</span>`;
+                } else {
+                    const validIndex = validNodes.findIndex(v => v.id === cfg.id);
+                    if (validIndex === 0) {
+                        logicText = `<span class="text-emerald-400 font-bold">直接輸出：</span>符合 [${myConditionStr}] 的客人`;
+                    } else if (validIndex > 0) {
+                        const prevIds = validNodes.slice(0, validIndex).map(v => v.id).join(', ');
+                        logicText = `<span class="text-emerald-400 font-bold">過濾輸出：</span>符合 [${myConditionStr}]<br><span class="text-rose-400 font-bold mt-1 inline-block">↳ 且排除</span> [${prevIds}] 所有的重疊客`;
+                    }
+                }
+
+                const card = document.createElement('div');
+                card.className = `${theme.bg} rounded-xl p-5 border ${theme.border} fade-in relative flex flex-col group transition-all duration-300 ${cfg.file ? 'shadow-[0_0_15px_rgba(16,185,129,0.15)] border-emerald-500/50' : ''}`;
+                
+                card.innerHTML = `
+                    <div class="flex justify-between items-center mb-3">
+                        <input type="text" value="${cfg.title}" onchange="updateNode('${cfg.id}', 'title', this.value)" class="bg-transparent border-b border-transparent hover:border-slate-600 focus:border-sky-500 focus:outline-none text-lg font-bold text-white w-2/3 transition-colors px-1" title="點擊修改名稱">
+                        <div class="text-xs ${theme.text} font-bold tech-font">${cfg.id}</div>
+                    </div>
+                    
+                    <div class="${theme.hbg} p-3 rounded-lg mb-4 border border-slate-700 flex flex-col gap-2 relative z-10">
+                        <select onchange="updateNode('${cfg.id}', 'operator', this.value)" class="w-full bg-slate-800 border border-slate-600 text-white text-sm rounded px-2 py-1 focus:outline-none focus:border-sky-500 cursor-pointer">
+                            <option value=">=" ${cfg.operator === '>=' ? 'selected' : ''}>大於等於 (>=)</option>
+                            <option value="<=" ${cfg.operator === '<=' ? 'selected' : ''}>小於等於 (<=)</option>
+                            <option value="ALL" ${cfg.operator === 'ALL' ? 'selected' : ''}>無條件 (全會員)</option>
+                        </select>
+                        <input type="date" onchange="updateNode('${cfg.id}', 'dateVal', this.value)" value="${cfg.dateVal}" class="w-full bg-slate-800 border border-slate-600 text-white text-sm rounded px-2 py-1 focus:outline-none focus:border-sky-500 tech-font ${dateInputDisplay}">
+                    </div>
+
+                    <div class="drop-zone rounded-lg p-3 text-center cursor-pointer flex flex-col items-center justify-center min-h-[5rem] mb-4 relative ${cfg.file ? 'has-file' : ''}" id="drop_${cfg.id}" onclick="document.getElementById('file_${cfg.id}').click()">
+                        <svg class="w-5 h-5 ${cfg.file ? 'text-emerald-400' : 'text-slate-500'} mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${cfg.file ? 'M5 13l4 4L19 7' : 'M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12'}"></path></svg>
+                        <span id="label_${cfg.id}" class="text-xs ${cfg.file ? 'text-emerald-400 font-bold' : 'text-slate-400'} px-1 truncate w-full">${cfg.file ? cfg.file.name : '點擊上傳 / 拖曳 CSV'}</span>
+                        <input type="file" id="file_${cfg.id}" accept=".csv" class="hidden">
+                    </div>
+
+                    <div class="mt-auto bg-slate-950/50 p-3 rounded border border-slate-700/50 text-xs text-slate-300 leading-relaxed">
+                        <div class="text-[10px] text-slate-500 mb-1 tech-font">EXPECTED_OUTPUT:</div>
+                        ${logicText}
+                    </div>
+                `;
+                
+                els.uploadGrid.appendChild(card);
+                bindFileEvents(cfg.id);
+            });
+        }
+
+        function bindFileEvents(id) {
+            const drop = document.getElementById(`drop_${id}`);
+            const input = document.getElementById(`file_${id}`);
+
+            const handleFile = (file) => {
+                if (file) {
+                    const cfgIndex = pipelineConfig.findIndex(c => c.id === id);
+                    if(cfgIndex !== -1) {
+                        pipelineConfig[cfgIndex].file = file;
+                        renderUploadBoxes(); 
+                    }
+                }
+            };
+
+            input.addEventListener('change', (e) => handleFile(e.target.files[0]));
+
+            drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('dragover'); });
+            drop.addEventListener('dragleave', e => { e.preventDefault(); drop.classList.remove('dragover'); });
+            drop.addEventListener('drop', e => {
+                e.preventDefault(); drop.classList.remove('dragover');
+                if (e.dataTransfer.files[0] && e.dataTransfer.files[0].name.endsWith('.csv')) {
+                    const dt = new DataTransfer();
+                    dt.items.add(e.dataTransfer.files[0]);
+                    input.files = dt.files;
+                    handleFile(e.dataTransfer.files[0]);
+                } else {
+                    alert('請上傳 CSV 檔案格式。');
+                }
+            });
+        }
+
+        function readCSVToSet(file) {
+            return new Promise((resolve, reject) => {
+                Papa.parse(file, {
+                    header: true, skipEmptyLines: true, dynamicTyping: false,
+                    complete: function(results) {
+                        const set = new Set();
+                        if (results.data.length > 0) {
+                            const targetColumn = Object.keys(results.data[0]).find(k => k.includes('卡號') || k.includes('Member') || k.includes('編號'));
+                            if (!targetColumn) { reject(new Error(`[${file.name}] 找不到可辨識的「會員卡號」欄位`)); return; }
+                            
+                            results.data.forEach(row => {
+                                let val = row[targetColumn];
+                                if (val) {
+                                    val = val.trim().replace(/^"|"$/g, '');
+                                    if(val.length > 0) set.add(val);
+                                }
+                            });
+                        }
+                        resolve(set);
+                    },
+                    error: reject
+                });
+            });
+        }
+
+        function setDifference(setA, setB) {
+            const diff = new Set(setA);
+            for (const elem of setB) { diff.delete(elem); }
+            return diff;
+        }
+
+        async function executeProcessing() {
+            const validConfigs = pipelineConfig.filter(c => c.file);
+            const baseDateStr = els.baseDate.value; // 取得基準日供文字翻譯
+
+            if (validConfigs.length === 0) {
+                alert('系統偵測不到任何檔案，請至少上傳一個 CSV 檔案來進行運算！');
+                return;
+            }
+
+            document.getElementById('processBtn').classList.add('hidden');
+            document.getElementById('loadingUI').classList.remove('hidden');
+
+            try {
+                const parsedSets = await Promise.all(validConfigs.map(c => readCSVToSet(c.file)));
+                finalBlobs = [];
+                const resultData = [];
+                
+                let cumulativeSet = new Set(); 
+
+                for (let i = 0; i < validConfigs.length; i++) {
+                    let resultSet;
+                    let formulaDesc = '';
+                    let rangeDescText = ''; // 用來放「人話版」的日期區間
+                    
+                    const curr = validConfigs[i];
+                    const myCondition = curr.operator === 'ALL' ? '全會員' : `${curr.operator} ${curr.dateVal}`;
+
+                    // --- 產生「人話版」日期區間描述 ---
+                    if (curr.operator === 'ALL') {
+                        rangeDescText = '包含深度流失與從未消費的會員';
+                    } else if (curr.operator === '<=') {
+                        rangeDescText = `上次消費在 ${formatMD(curr.dateVal)} (含) 以前的會員`;
+                    } else if (curr.operator === '>=') {
+                        if (i === 0) {
+                            rangeDescText = `上次消費介於 ${formatMD(curr.dateVal)} 至 ${formatMD(baseDateStr)} 的會員`;
+                        } else {
+                            const prev = validConfigs[i-1];
+                            if (prev.operator === '>=') {
+                                // 若上一層也是大於等於，此層上限就是上一層日期減一天
+                                rangeDescText = `上次消費介於 ${formatMD(curr.dateVal)} 至 ${minusOneDay(prev.dateVal)} 的會員`;
+                            } else {
+                                rangeDescText = `上次消費從 ${formatMD(curr.dateVal)} 起的會員`;
+                            }
+                        }
+                    } else {
+                        rangeDescText = '系統自訂條件名單';
+                    }
+
+                    // --- 核心差集計算 ---
+                    if (i === 0) {
+                        resultSet = parsedSets[0];
+                        formulaDesc = `底層運算：直接取用 [${myCondition}] 名單`;
+                    } else {
+                        resultSet = setDifference(parsedSets[i], cumulativeSet);
+                        const prevIds = validConfigs.slice(0, i).map(v => v.id).join(', ');
+                        formulaDesc = `底層運算：符合 [${myCondition}] 且排除 [${prevIds}] 所有重疊客`;
+                    }
+
+                    parsedSets[i].forEach(id => cumulativeSet.add(id));
+
+                    const csvString = Papa.unparse(Array.from(resultSet).map(id => ({ '會員卡號': id })));
+                    const blob = new Blob(['\uFEFF' + csvString], { type: 'text/csv;charset=utf-8;' });
+                    finalBlobs.push(blob);
+
+                    resultData.push({
+                        id: curr.id,
+                        title: curr.title,
+                        desc: formulaDesc,
+                        rangeDesc: rangeDescText, // 寫入供 UI 使用
+                        count: resultSet.size,
+                        colorTheme: curr.colorTheme
+                    });
+                }
+
+                renderResults(resultData);
+
+            } catch (error) {
+                alert('處理失敗：\n' + error.message);
+            } finally {
+                document.getElementById('processBtn').classList.remove('hidden');
+                document.getElementById('loadingUI').classList.add('hidden');
+            }
+        }
+
+        function renderResults(dataArray) {
+            els.resultGrid.innerHTML = '';
+            
+            dataArray.forEach((res, index) => {
+                const colorMap = {
+                    sky: { card: 'text-sky-400 border-sky-500/30 bg-sky-900/10 hover:border-sky-500', tag: 'text-sky-300 bg-sky-900/40 border-sky-500/30' },
+                    violet: { card: 'text-violet-400 border-violet-500/30 bg-violet-900/10 hover:border-violet-500', tag: 'text-violet-300 bg-violet-900/40 border-violet-500/30' },
+                    rose: { card: 'text-rose-400 border-rose-500/30 bg-rose-900/10 hover:border-rose-500', tag: 'text-rose-300 bg-rose-900/40 border-rose-500/30' }
+                };
+                const theme = colorMap[res.colorTheme] || colorMap.sky;
+
+                const card = document.createElement('div');
+                card.className = `rounded-xl p-5 border transition-colors flex flex-col ${theme.card} relative group`;
+                card.innerHTML = `
+                    <div class="flex justify-between items-center mb-3">
+                        <div class="font-black text-xl truncate pr-2" title="${res.title}">${res.title}</div>
+                        <div class="text-xs opacity-70 tech-font">${res.id}</div>
+                    </div>
+                    
+                    <!-- 新增的「白話文日期區間」標籤 -->
+                    <div class="text-sm font-bold ${theme.tag} px-2.5 py-1.5 rounded-lg mb-4 border tracking-wide">
+                        ${res.rangeDesc}
+                    </div>
+                    
+                    <div class="text-xs text-slate-400 mb-4 flex-grow flex items-start leading-relaxed border-b border-slate-700/50 pb-2">${res.desc}</div>
+                    <div class="text-4xl font-black text-white mb-6 tech-font mt-2">
+                        ${res.count.toLocaleString()} <span class="text-sm font-normal text-slate-500">人</span>
+                    </div>
+                    <button onclick="downloadBlob(${index}, '${res.id}', '${res.title}')" class="mt-auto w-full bg-slate-800 hover:bg-slate-700 text-white border border-slate-600 py-3 rounded-lg font-bold transition-all group-hover:bg-slate-700">
+                        下載此名單
+                    </button>
+                `;
+                els.resultGrid.appendChild(card);
+            });
+
+            document.getElementById('resultModal').classList.remove('hidden');
+        }
+
+        function downloadBlob(index, idName, titleName) {
+            const blob = finalBlobs[index];
+            if(!blob) return;
+
+            const safeTitle = titleName.replace(/[\[\]\/\\]/g, '').trim();
+            const filename = `[獨立分眾]_${idName}_${safeTitle}.csv`;
+
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url; link.download = filename;
+            document.body.appendChild(link); link.click(); document.body.removeChild(link);
+        }
+
+        function closeModal() { document.getElementById('resultModal').classList.add('hidden'); }
+
+        init();
+    </script>
+</body>
+</html>
